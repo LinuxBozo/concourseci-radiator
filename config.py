@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*- 
+# -*- coding: utf-8 -*-
 
 CONCOURSE_DOMAIN = 'http://concourse.change.me.hostname'
 CONCOURSE_USERNAME = 'admin'

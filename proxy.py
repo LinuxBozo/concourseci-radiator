@@ -1,7 +1,6 @@
 import json
 import os
-import time
-from flask import Flask, Response, redirect, request, make_response, jsonify
+from flask import Flask, Response, request
 import requests
 import hashlib
 
@@ -23,6 +22,7 @@ ciTeam = app.config.get('CONCOURSE_TEAM', 'main')
 bearerToken = ''
 idx = 0
 
+
 @app.route('/api/v1/pipelines', methods=['GET'])
 def redirectPipelines():
     '''
@@ -41,19 +41,19 @@ def redirectPipelines():
     except requests.ConnectionError as e:
         return Response("The ConcourseCI is not reachable", status=500, headers={'Etag': ''})
     except requests.exceptions.HTTPError as e:
-        return Response("The ConcourseCI is not reachable, status code: " + str(e.response.status_code) + ", reason: " + e.response.reason, status=500, headers={'Etag': ''})
+        return Response("The ConcourseCI is not reachable, status code: " + str(e.response.status_code) +
+                        ", reason: " + e.response.reason, status=500, headers={'Etag': ''})
 
     # Check that at least one worker is available
     try:
-        from requests.auth import HTTPDigestAuth
         responseWorkers = requests.get(baseUrl + '/api/v1/workers', headers=tokenHeader)
         responseWorkers.raise_for_status()
         if len(responseWorkers.json()) == 0:
             return Response("There are no workers available!", status=500, headers={'Etag': ''})
 
     except requests.exceptions.HTTPError as e:
-        return Response("The ConcourseCI is not reachable, status code: " + str(e.response.status_code) + ", reason: " + e.response.reason, status=500, headers={'Etag': ''})
-
+        return Response("The ConcourseCI is not reachable, status code: " + str(e.response.status_code) +
+                        ", reason: " + e.response.reason, status=500, headers={'Etag': ''})
 
     # iterate over pipelines and find the status for each
     lstPipelines = []
@@ -66,33 +66,28 @@ def redirectPipelines():
         if (not pipeline["paused"]):
             lstJobs = []
 
-            rr = requests.get(baseUrl + '/api/v1/teams/' + ciTeam + '/pipelines/' + pipeline['name'] + '/jobs', headers=tokenHeader)
+            rr = requests.get(baseUrl + '/api/v1/teams/' + ciTeam + '/pipelines/' + pipeline['name'] + '/jobs',
+                              headers=tokenHeader)
             for job in rr.json():
                 if job['next_build']:
-                    lstJobs.append(
-                            {
-                                'status': job['next_build']['status'], 
-                                'id': job['next_build']['id']
-                            }
-                        )
+                    lstJobs.append({
+                        'status': job['next_build']['status'],
+                        'id': job['next_build']['id']
+                    })
                 elif job['finished_build']:
-                    lstJobs.append(
-                            {
-                                'status': job['finished_build']['status'], 
-                                'id': job['finished_build']['id']
-                            }
-                        )
+                    lstJobs.append({
+                        'status': job['finished_build']['status'],
+                        'id': job['finished_build']['id']
+                    })
                 else:
-                    lstJobs.append(
-                        {'status': 'non-exist'}
-                        )
+                    lstJobs.append({'status': 'non-exist'})
 
             details['jobs'] = lstJobs
 
         lstPipelines.append(details)
 
     # sort pipelines by name
-    lstPipelines = sorted(lstPipelines, key=lambda pipeline: pipeline['name'])     
+    lstPipelines = sorted(lstPipelines, key=lambda pipeline: pipeline['name'])
 
     jsonResponse = json.dumps(lstPipelines)
 
@@ -123,11 +118,10 @@ def redirectPipelines():
             })
 
 
-
 def _getAuthenticationHeader():
     '''
         Method that returns the cached header for an authentication
-        and updates the bearer token periodically, because token 
+        and updates the bearer token periodically, because token
         can be expired.
     '''
     global idx
@@ -144,15 +138,12 @@ def _getAuthenticationHeader():
             bearerToken = r.json()['value']
             idx = 1
 
-        except requests.exceptions.HTTPError as e:
+        except requests.exceptions.HTTPError:
             idx = 0
-            return { "Authorization" : "Bearer nonsence" }
-        
-        
+            return {"Authorization": "Bearer nonsence"}
+
     idx += 1
-    return { "Authorization" : "Bearer " + bearerToken }
-
-
+    return {"Authorization": "Bearer " + bearerToken}
 
 
 if __name__ == '__main__':
