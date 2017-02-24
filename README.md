@@ -15,9 +15,10 @@ To run this service, you need to install requirements for your Python:
 ```bash
 pip install -r requirements.txt
 ```
-edit the file **config.py** providing correct URL and credentials for your Concourse server and then you can start it something like that:
+copy the `.env.sample` to `.env` and edit it providing correct URL and credentials for your Concourse server and then you can start it something like this:
 
 ```bash
+source ./.env
 python proxy.py
 ```
 

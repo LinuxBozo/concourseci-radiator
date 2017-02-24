@@ -4,19 +4,24 @@ from flask import Flask, Response, request
 import requests
 import hashlib
 
+CONFIG_KEYS = {
+    'CONCOURSE_DOMAIN': 'http://concourse.change.me.hostname',
+    'CONCOURSE_USERNAME': 'admin',
+    'CONCOURSE_PASSWORD': 'admin',
+    'CONCOURSE_CLIENT_ID': None,
+    'CONCOURSE_CLIENT_SECRET': None,
+    'CONCOURSE_CLIENT_TOKEN_URI': None,
+}
+
 app = Flask(__name__, static_url_path='', static_folder='public')
+
+# copy these environment variables into app.config
+for ck, default in CONFIG_KEYS.items():
+    app.config[ck] = os.environ.get(ck, default)
 
 # add route for the statics
 app.add_url_rule('/', 'root', lambda: app.send_static_file('index.html'))
 
-# get configuration settings
-app.config.from_object('config')
-
-# get properties from config file
-baseUrl = app.config.get('CONCOURSE_DOMAIN', 'http://concourse.change.me.hostname')
-ciUsername = app.config.get('CONCOURSE_USERNAME', 'admin')
-ciPassword = app.config.get('CONCOURSE_PASSWORD', 'admin')
-ciTeam = app.config.get('CONCOURSE_TEAM', 'main')
 
 # cached bearer token
 bearerToken = ''
@@ -36,7 +41,7 @@ def redirectPipelines():
 
     # Get list of all the pipelines
     try:
-        r = requests.get(baseUrl + '/api/v1/pipelines', headers=tokenHeader)
+        r = requests.get(app.config['CONCOURSE_DOMAIN'] + '/api/v1/pipelines', headers=tokenHeader)
         r.raise_for_status()
     except requests.ConnectionError as e:
         return Response("The ConcourseCI is not reachable", status=500, headers={'Etag': ''})
@@ -46,7 +51,7 @@ def redirectPipelines():
 
     # Check that at least one worker is available
     try:
-        responseWorkers = requests.get(baseUrl + '/api/v1/workers', headers=tokenHeader)
+        responseWorkers = requests.get(app.config['CONCOURSE_DOMAIN'] + '/api/v1/workers', headers=tokenHeader)
         responseWorkers.raise_for_status()
         if len(responseWorkers.json()) == 0:
             return Response("There are no workers available!", status=500, headers={'Etag': ''})
@@ -59,15 +64,16 @@ def redirectPipelines():
     lstPipelines = []
     for pipeline in r.json():
         details = {}
-        details['url'] = baseUrl + pipeline['url']
+        details['url'] = app.config['CONCOURSE_DOMAIN'] + pipeline['url']
         details['name'] = pipeline['name']
         details['paused'] = pipeline['paused']
 
         if (not pipeline["paused"]):
             lstJobs = []
 
-            rr = requests.get(baseUrl + '/api/v1/teams/' + ciTeam + '/pipelines/' + pipeline['name'] + '/jobs',
-                              headers=tokenHeader)
+            rr = requests.get(app.config['CONCOURSE_DOMAIN'] + '/api/v1/teams/' +
+                              app.config['CONCOURSE_TEAM'] + '/pipelines/' + pipeline['name'] +
+                              '/jobs', headers=tokenHeader)
             for job in rr.json():
                 if job['next_build']:
                     lstJobs.append({
@@ -131,7 +137,16 @@ def _getAuthenticationHeader():
 
         # get the Bearer Token for the given team avoiding to request it again and again
         try:
-            r = requests.get(baseUrl + '/api/v1/teams/' + ciTeam + '/auth/token', auth=(ciUsername, ciPassword))
+            headers = {}
+            auth = None
+            if (app.config['CONCOURSE_CLIENT_ID'] and
+                    app.config['CONCOURSE_CLIENT_SECRET'] and
+                    app.config['CONCOURSE_CLIENT_TOKEN_URI']):
+                headers = _get_oauth_client_token()
+            else:
+                auth = requests.auth.HTTPBasicAuth(app.config['CONCOURSE_USERNAME'], app.config['CONCOURSE_PASSWORD'])
+            r = requests.get(app.config['CONCOURSE_DOMAIN'] + '/api/v1/teams/' +
+                             app.config['CONCOURSE_TEAM'] + '/auth/token', auth=auth, headers=headers)
             r.raise_for_status()
 
             # remember the new
@@ -144,6 +159,28 @@ def _getAuthenticationHeader():
 
     idx += 1
     return {"Authorization": "Bearer " + bearerToken}
+
+
+def _get_oauth_client_token():
+
+    oauthToken = 'nonsense'
+    try:
+        r = requests.post(
+            app.config['CONCOURSE_CLIENT_TOKEN_URI'],
+            params={
+                'grant_type': 'client_credentials',
+                'response_type': 'token'
+            },
+            auth=requests.auth.HTTPBasicAuth(app.config['CONCOURSE_CLIENT_ID'], app.config['CONCOURSE_CLIENT_SECRET'])
+        )
+        r.raise_for_status()
+
+        oauthToken = r.json()['access_token']
+
+    except requests.exceptions.HTTPError:
+        pass
+
+    return {"Authorization": "Bearer " + oauthToken}
 
 
 if __name__ == '__main__':
